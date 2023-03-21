@@ -28,7 +28,7 @@ discord.utils.setup_logging(root=False)
 
 
 class Administration(commands.Cog, name='Administration'):
-    '''Diese Kategorie erfordert bestimmte Berechtigungen'''
+    '''Befehle zur Verwaltung des Bots. Diese Kategorie erfordert bestimmte Berechtigungen.'''
 
     def __init__(self, bot: Bot) -> None:
         self.bot = bot
@@ -87,10 +87,14 @@ class Administration(commands.Cog, name='Administration'):
     @is_super_user()
     @_bot.command(
         name='pull',
-        aliases=['-p']
+        aliases=['-p'],
+        brief='Pullt die neusten Commits aus dem Github-Repo.'
     )
     async def _git_pull(self, ctx: commands.Context) -> None:
-        '''Pullt die neusten Commits aus dem Github-Repo.'''
+        '''Pullt die neusten Commits aus dem Github-Repo.
+
+        Achtung: Kann entweder den Reload einer Extension, den Reload des Bots oder einen
+        kompletten Neustart erfordern.'''
 
         console_output = subprocess.check_output(
             'git pull', shell=True
@@ -101,11 +105,12 @@ class Administration(commands.Cog, name='Administration'):
     @is_super_user()
     @_bot.command(
         name='log',
-        aliases=['-l']
+        aliases=['-l'],
+        brief='Zeigt das neuste bzw. ein bestimmtes Logfile an.'
     )
     async def _show_log(self, ctx: commands.Context, page: int = 1, file: str = '') -> None:
-        '''Zeigt das neuste bzw. ein bestimmtes Logfile an. Die Seiten können mit dem page-Argument
-        gewechselt werden.'''
+        '''Zeigt das neuste bzw. ein bestimmtes Logfile an.
+        Die Seiten können mit dem page-Argument gewechselt werden.'''
 
         chunk_size = 15
 
@@ -141,7 +146,8 @@ class Administration(commands.Cog, name='Administration'):
 
     @_bot.command(
         name='version',
-        aliases=['-v']
+        aliases=['-v'],
+        brief='Gibt Auskunft über die Version des Bots.'
     )
     async def _version(self, ctx: commands.Context) -> None:
         '''Gibt Auskunft darüber, welche Version des Bots aktuell installiert ist.
@@ -172,7 +178,8 @@ class Administration(commands.Cog, name='Administration'):
 
     @_bot.command(
         name='uptime',
-        aliases=['-u']
+        aliases=['-u'],
+        brief='Gibt Auskunft über die Uptime des Bots.'
     )
     async def _uptime(self, ctx: commands.Context) -> None:
         '''Gibt Auskunft darüber, wie lange der Bot seit dem letzten Start läuft.'''
@@ -185,7 +192,8 @@ class Administration(commands.Cog, name='Administration'):
     @is_super_user()
     @_bot.command(
         name='reload',
-        aliases=['-r']
+        aliases=['-r'],
+        brief='Lädt Teile des Bots neu.'
     )
     async def _reload_bot(self, ctx: commands.Context) -> None:
         '''Lädt Teile des Bots neu. Das bedeutet im Detail:
