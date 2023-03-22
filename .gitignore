@@ -3,6 +3,7 @@
 .DS_Store
 
 channel_messages.txt
+storage.db
 
 __pycache__
 .ruff_cache
