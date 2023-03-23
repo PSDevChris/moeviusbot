@@ -18,6 +18,8 @@ class EventType(Enum):
 
 
 class Event(Base):
+    '''This class is used for events like streams or coop sessions'''
+
     __tablename__ = "event"
 
     id: Mapped[int] = mapped_column(primary_key=True)
