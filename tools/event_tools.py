@@ -5,10 +5,9 @@ import datetime as dt
 from enum import Enum
 from typing import Optional
 
-from sqlalchemy import select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column
 
-from tools.db_tools import Base, create_all, create_engine
+from tools.db_tools import Base
 
 
 class EventType(Enum):
@@ -28,26 +27,9 @@ class Event(Base):
     time: Mapped[dt.datetime]
     creator: Mapped[int]
     announced: Mapped[bool] = mapped_column(default=False)
+    started: Mapped[bool] = mapped_column(default=False)
 
     def __repr__(self) -> str:
         return f"User(id={self.id!r}, type={self.type!r}, title={self.title!r}, \
-            time={self.time!r}, creator={self.creator!r}, announced={self.announced!r})"
-
-
-def main() -> None:
-    create_all()
-
-    with Session(create_engine()) as session:
-        session.add(Event(
-            type=EventType.STREAM,
-            title="Schnenko Nervt!",
-            time=dt.datetime.now(),
-            creator=1337
-        ))
-
-        session.commit()
-
-        stmt = select(Event).where(Event.creator == 1337)
-        events = list(session.scalars(stmt))
-
-        str(events)
+            time={self.time!r}, creator={self.creator!r}, announced={self.announced!r}, \
+            started={self.started})"
