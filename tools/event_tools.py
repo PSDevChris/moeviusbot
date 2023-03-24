@@ -3,11 +3,11 @@ of the discord bot'''
 
 import datetime as dt
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column
 
-from tools.db_tools import Base
+from tools.db_tools import Base, create_engine
 
 
 class EventType(Enum):
@@ -29,7 +29,17 @@ class Event(Base):
     announced: Mapped[bool] = mapped_column(default=False)
     started: Mapped[bool] = mapped_column(default=False)
 
+    def __init__(self, **kw: Any):
+        super().__init__(**kw)
+
+        self.engine = create_engine()
+
     def __repr__(self) -> str:
         return f"User(id={self.id!r}, type={self.type!r}, title={self.title!r}, \
             time={self.time!r}, creator={self.creator!r}, announced={self.announced!r}, \
             started={self.started})"
+
+    async def add_to_db(self) -> None:
+        with Session(self.engine) as session:
+            session.add(self)
+            session.commit()
