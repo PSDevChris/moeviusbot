@@ -1,15 +1,21 @@
 import datetime as dt
 import logging
+from typing import Optional
 
 import discord
 from discord.ext import commands, tasks
 
 from bot import Bot
-from event import Event
+from tools.check_tools import SpecialUser, is_special_user
+from tools.converter_tools import DtString
+from tools.db_tools import create_engine
+from tools.event_tools import Event, EventType
+from tools.view_tools import EventPreview
 
 
 async def setup(bot: Bot) -> None:
     '''Setup function for the cog.'''
+
     await bot.add_cog(Reminder(bot))
     logging.info("Cog: Reminder loaded.")
 
@@ -36,11 +42,10 @@ class Reminder(commands.Cog, name='Events'):
 
     def __init__(self, bot: Bot) -> None:
         self.bot = bot
-        self.events = {
-            'stream': Event('stream'),
-            'game': Event('game')
-        }
+
+        self.db_engine = create_engine()
         self.time_now = ''
+
         self.reminder_checker.start()
         logging.info('Reminder initialized.')
 
@@ -55,42 +60,6 @@ class Reminder(commands.Cog, name='Events'):
         event_time: str,
         event_game: str
     ) -> None:
-        if not isinstance(ctx.channel, discord.TextChannel):
-            return
-
-        if event_type == 'game':
-            if ctx.channel.name not in self.bot.channels:
-                await ctx.send('Hey, das ist kein Spiele-Channel, Krah Krah!')
-                logging.warning(
-                    '%s wollte einen Game-Reminder im Channel %s erstellen.',
-                    ctx.author.name,
-                    ctx.channel.name
-                )
-                return
-
-            self.bot.channels['game'] = ctx.channel
-            event_game = ctx.channel.name.replace('-', ' ').title()
-
-        logging.info(
-            "%s hat das Event %s geupdatet.",
-            ctx.author.name,
-            event_type
-        )
-        self.events[event_type].update_event(event_time, event_game)
-
-        logging.debug(
-            "%s wurde zum Event %s hinzugefügt.",
-            ctx.author.name,
-            event_type
-        )
-        self.events[event_type].add_member(ctx.author)
-
-        if event_type == 'stream' and ctx.channel != self.bot.channels['stream']:
-            await ctx.send(
-                f"Ich habe einen Stream-Reminder für {event_time} "
-                "Uhr eingerichtet, Krah Krah!"
-            )
-
         if (output_channel := self.bot.channels[event_type]) is None:
             return
 
@@ -195,26 +164,26 @@ class Reminder(commands.Cog, name='Events'):
         '''Hier kannst du alles über einen aktuellen Stream-Reminder herausfinden oder seine
         Einstellungen anpassen'''
 
-        await self.process_event_info('stream', ctx)
+        pass
 
-    @_stream.command(
-        name='add',
-        brief='Fügt ein Stream Event hinzu.'
-    )
-    async def _add_stream(self, ctx: commands.Context, time: str, game: str) -> None:
-        ''''''
+    @is_special_user([SpecialUser.Schnenk, SpecialUser.Hans])
+    @_stream.command(name='add', brief='Fügt ein Stream Event hinzu.')
+    @discord.app_commands.rename(time='zeitpunkt', title='titel')
+    @discord.app_commands.describe(time='HH:MM oder TT.MM. HH:MM', title='Optionaler Titel')
+    async def _add_stream(
+        self,
+        ctx: commands.Context,
+        time: DtString,
+        title: Optional[str] = ''
+    ) -> None:
+        new_event = Event(type=EventType.STREAM, title=title, time=time, creator=ctx.author.id)
+        await EventPreview(ctx, new_event).send()
 
-        await self.process_event_command('stream', ctx, time, game)
-
-    @_stream.command(
-        name='reset',
-        brief='Resettet ein Stream Event.'
-    )
+    @_stream.command(name='reset', brief='Resettet ein Stream Event.')
     async def _reset_stream(self, ctx: commands.Context) -> None:
         ''''''
 
-        self.events['stream'].reset()
-        await ctx.send('Event wurde zurückgesetzt, Krah Krah!')
+        pass
 
     @commands.hybrid_group(
         name='game',
@@ -226,28 +195,33 @@ class Reminder(commands.Cog, name='Events'):
         '''Hier kannst du alles über einen aktuellen Coop-Reminder herausfinden oder
         seine Einstellungen anpassen'''
 
-        await self.process_event_info('game', ctx)
+        pass
 
-    @_game.command(
-        name='add',
-        aliases=['-a', '+'],
-        brief='Fügt ein Stream Event hinzu.'
-    )
-    async def _add_game(self, ctx: commands.Context, time: str, game: str) -> None:
-        ''''''
+    @_game.command(name='add', aliases=['-a', '+'], brief='Fügt ein Coop Event hinzu.')
+    @discord.app_commands.rename(time='zeitpunkt')
+    @discord.app_commands.describe(time='HH:MM oder TT.MM. HH:MM')
+    async def _add_game(self, ctx: commands.Context, time: str) -> None:
+        if not isinstance(ctx.channel, discord.TextChannel):
+            return
 
-        await self.process_event_command('game', ctx, time, game)
+        new_event = Event(
+            type=EventType.GAME,
+            title=ctx.channel.name.replace('-', ' ').title(),
+            time=time,
+            creator=ctx.author.id
+        )
+
+        await EventPreview(ctx, new_event).send()
 
     @_game.command(
         name='reset',
         aliases=['-r'],
-        brief='Fügt ein Stream Event hinzu.'
+        brief='Resettet ein Coop Event.'
     )
     async def _reset_game(self, ctx: commands.Context) -> None:
         ''''''
 
-        self.events['game'].reset()
-        await ctx.send('Event wurde zurückgesetzt, Krah Krah!')
+        pass
 
     @commands.hybrid_command(
         name='join',
