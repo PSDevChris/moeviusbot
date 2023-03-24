@@ -15,6 +15,7 @@ from result import UnwrapError
 
 from bot import Bot
 from tools.check_tools import is_super_user
+from tools.db_tools import create_all
 from tools.dt_tools import strfdelta
 from tools.logger_tools import LoggerTools
 from tools.py_version_tools import check_python_version
@@ -288,7 +289,9 @@ class Administration(commands.Cog, name='Administration'):
             ]
         ))
 
-        await self.bot.tree.sync()
+
+        create_all()
+
         logging.info('Bot ready!')
 
         startup_duration = (dt.datetime.now() - STARTUP_TIME).total_seconds()
