@@ -1,6 +1,7 @@
 '''This module contains some helper functions for datetime'''
 
 import datetime as dt
+from zoneinfo import ZoneInfo
 
 
 def get_local_timezone() -> dt.tzinfo | None:
@@ -9,7 +10,7 @@ def get_local_timezone() -> dt.tzinfo | None:
     Returns:
         dt._TzInfo: Timezone object with the local timezone'''
 
-    return dt.datetime.now().astimezone().tzinfo
+    return ZoneInfo("Europe/Berlin")
 
 
 def strfdelta(
