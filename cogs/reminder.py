@@ -9,8 +9,9 @@ from bot import Bot
 from tools.check_tools import SpecialUser, is_special_user
 from tools.converter_tools import DtString
 from tools.db_tools import create_engine
+from tools.embed_tools import EmbedBuilder
 from tools.event_tools import Event, EventType
-from tools.view_tools import EventPreview
+from tools.view_tools import EventButtonAction, ViewBuilder
 
 
 async def setup(bot: Bot) -> None:
@@ -53,107 +54,12 @@ class Reminder(commands.Cog, name='Events'):
         self.reminder_checker.cancel()
         logging.info('Reminder unloaded.')
 
-    async def process_event_command(
-        self,
-        event_type: str,
-        ctx: commands.Context,
-        event_time: str,
-        event_game: str
-    ) -> None:
-        if (output_channel := self.bot.channels[event_type]) is None:
-            return
-
-        await output_channel.send(
-            '**Macht euch bereit für einen Stream!**\n'
-            if event_type == 'stream' else '**Macht euch bereit für ein Ründchen Coop!**\n'
-            f'Wann? {event_time} Uhr\n'
-            f'Was? {event_game}\n'
-            'Gebt mir ein !join, Krah Krah!'
-        )
-
-        logging.info('Event-Info was posted.')
-
-        if event_type != 'game' or ctx.channel.name not in self.bot.squads:
-            return
-
-        if not (members := [
-            f'<@{member}> '
-            for member in self.bot.squads[ctx.channel.name].values()
-            if member != ctx.author.id
-        ]):
-            return
-
-        await ctx.send(f'Das gilt insbesondere für das Squad, Krah Krah!\n{" ".join(members)}')
-        logging.info('Squad was informedd.')
-
-    async def process_event_info(
-        self,
-        event_type: str,
-        ctx: commands.Context
-    ) -> None:
-        if self.events[event_type].event_time == '':
-            type_string = ' Stream' if event_type == 'stream' else 'e Coop-Runde'
-            await ctx.send(f"Es wurde noch kein{type_string} angekündigt, Krah Krah!")
-
-            logging.warning(
-                "%s hat nach einem Event %s gefragt, das es nicht gibt.",
-                ctx.author.name,
-                event_type
-            )
-
-            return
-
-        begin_str = "Der nächste Stream" if event_type == 'stream' else "Die nächste Coop-Runde"
-
-        if self.events[event_type].event_game == '':
-            game_str = ""
-        else:
-            game_str = f"Gespielt wird: {self.events[event_type].event_game}. "
-
-        members = ", ".join(self.events[event_type].event_members.values())
-
-        await ctx.send(
-            f"{begin_str} beginnt um {self.events[event_type].event_time} Uhr. "
-            f"{game_str}Mit dabei sind bisher: {members}, Krah Krah!"
-        )
-        logging.info(
-            "%s hat nach einem Event %s gefragt. Die Infos dazu wurden rausgehauen.",
-            ctx.author.name,
-            event_type
-        )
-
     async def join_event(
         self,
         event_type: str,
         ctx: commands.Context
     ) -> None:
-        if self.events[event_type].event_time == '':
-            await ctx.send("Nanu, anscheinend gibt es nichts zum Beitreten, Krah Krah!")
-            logging.warning(
-                "%s wollte einem Event %s beitreten, dass es nicht gibt.",
-                ctx.author.name,
-                event_type
-            )
-            return
-
-        if ctx.author.display_name in self.events[event_type].event_members.values():
-            await ctx.send("Hey du Vogel, du stehst bereits auf der Teilnehmerliste, Krah Krah!")
-
-            logging.warning(
-                "%s steht bereits auf der Teilnehmerliste von Event %s.",
-                ctx.author.name,
-                event_type
-            )
-            return
-
-        self.events[event_type].add_member(ctx.author)
-
-        await ctx.send("Alles klar, ich packe dich auf die Teilnehmerliste, Krah Krah!")
-        logging.info(
-            "%s wurde auf die Teilnehmerliste von Event %s hinzugefügt.",
-            ctx.author.name,
-            event_type
-        )
+        pass
 
     @commands.hybrid_group(
         name='stream',
@@ -164,7 +70,15 @@ class Reminder(commands.Cog, name='Events'):
         '''Hier kannst du alles über einen aktuellen Stream-Reminder herausfinden oder seine
         Einstellungen anpassen'''
 
-        pass
+        await ctx.defer()
+
+        if not (events := await Event.upcoming_events()):
+            await ctx.send("Es wurde noch kein Stream angekündigt, Krah Krah!")
+            return
+
+        embed = EmbedBuilder.upcoming_events(events)
+
+        await ctx.send("Hier sind die angekündigten Streams:", embed=embed)
 
     @is_special_user([SpecialUser.Schnenk, SpecialUser.Hans])
     @_stream.command(name='add', brief='Fügt ein Stream Event hinzu.')
@@ -176,14 +90,51 @@ class Reminder(commands.Cog, name='Events'):
         time: DtString,
         title: Optional[str] = ''
     ) -> None:
-        new_event = Event(type=EventType.STREAM, title=title, time=time, creator=ctx.author.id)
-        await EventPreview(ctx, new_event).send()
+        await ctx.defer()
 
-    @_stream.command(name='reset', brief='Resettet ein Stream Event.')
-    async def _reset_stream(self, ctx: commands.Context) -> None:
-        ''''''
+        event = Event(type=EventType.STREAM, title=title, time=time, creator=ctx.author.id)
+        embed = EmbedBuilder.single_stream_announcement(event)
+        view = ViewBuilder.confirm_event_preview(event)
 
-        pass
+        msg = await ctx.send("Stimmt das so?", embed=embed, view=view, ephemeral=True)
+
+        await view.wait()
+
+        if view.performed_action == EventButtonAction.ANNOUNCE:
+            if (output_channel := self.bot.channels['stream']) is None:
+                return
+
+            await output_channel.send(embed=EmbedBuilder.single_stream_announcement(event))
+            await ctx.send("Ich habe das Event angekündigt.", ephemeral=True)
+
+        await msg.edit(view=None)
+
+    @is_special_user([SpecialUser.Schnenk, SpecialUser.Hans])
+    @commands.hybrid_group(name='announce', fallback='list', brief='Zeigt unangekündigte Events.')
+    async def _announce_event(self, ctx: commands.Context) -> None:
+        await ctx.defer()
+
+        events = await Event.events_to_anounce()
+
+        await ctx.send(embed=EmbedBuilder.events_to_be_announced(events), ephemeral=True)
+
+    @is_special_user([SpecialUser.Schnenk, SpecialUser.Hans])
+    @_announce_event.command(name='next', brief='Kündigt Stream Events an.')
+    async def _announce_next_event(
+        self,
+        ctx: commands.Context,
+    ) -> None:
+        await ctx.defer()
+
+        if (output_channel := self.bot.channels['stream']) is None:
+            return
+
+        if (event := await Event.next_event_to_anounce()) is None:
+            return
+
+        await output_channel.send(embed=EmbedBuilder.single_stream_announcement(event))
+
+        await ctx.send("Ich habe das Event angekündigt.", ephemeral=True)
 
     @commands.hybrid_group(
         name='game',
@@ -194,34 +145,13 @@ class Reminder(commands.Cog, name='Events'):
     async def _game(self, ctx: commands.Context) -> None:
         '''Hier kannst du alles über einen aktuellen Coop-Reminder herausfinden oder
         seine Einstellungen anpassen'''
-
-        pass
+        await ctx.send("Dieses Kommando ist aktuell außer Betrieb, Krah Krah!")
 
     @_game.command(name='add', aliases=['-a', '+'], brief='Fügt ein Coop Event hinzu.')
     @discord.app_commands.rename(time='zeitpunkt')
     @discord.app_commands.describe(time='HH:MM oder TT.MM. HH:MM')
     async def _add_game(self, ctx: commands.Context, time: str) -> None:
-        if not isinstance(ctx.channel, discord.TextChannel):
-            return
-
-        new_event = Event(
-            type=EventType.GAME,
-            title=ctx.channel.name.replace('-', ' ').title(),
-            time=time,
-            creator=ctx.author.id
-        )
-
-        await EventPreview(ctx, new_event).send()
-
-    @_game.command(
-        name='reset',
-        aliases=['-r'],
-        brief='Resettet ein Coop Event.'
-    )
-    async def _reset_game(self, ctx: commands.Context) -> None:
-        ''''''
-
-        pass
+        await ctx.send("Dieses Kommando ist aktuell außer Betrieb, Krah Krah!")
 
     @commands.hybrid_command(
         name='join',
@@ -234,187 +164,48 @@ class Reminder(commands.Cog, name='Events'):
         Stehst du auf der Teilnehmerliste, wird der Bot dich per Erwähnung benachrichtigen,
         wenn das Event beginnt oder siche etwas ändern sollte.'''
 
-        if ctx.channel not in self.bot.channels.values():
-            return
-
         if ctx.channel == self.bot.channels['stream']:
             await self.join_event('stream', ctx)
         else:
             await self.join_event('game', ctx)
 
-    @is_valid_game_channel()
-    @commands.hybrid_command(
-        name='hey',
-        aliases=['h'],
-        brief='Informiere das Squad über ein bevorstehendes Event.'
-    )
-    async def _hey(self, ctx: commands.Context) -> None:
-        if not isinstance(ctx.channel, discord.TextChannel):
-            return
-
-        if not self.bot.squads[ctx.channel.name]:
-            await ctx.send('Hey, hier gibt es kein Squad, Krah Krah!')
-            logging.warning(
-                "%s hat ein leeres Squad in %s gerufen.", ctx.author.name, ctx.channel.name
-            )
-            return
-
-        if not (members := [
-            f'<@{member}>' for member in self.bot.squads[ctx.channel.name].values()
-            if (
-                member != ctx.author.id
-                and str(member) not in self.events['game'].event_members.keys()
-            )
-        ]):
-            await ctx.send("Hey, es wissen schon alle bescheid, Krah Krah!")
-            logging.warning(
-                "%s hat das Squad in %s gerufen aber es sind schon alle gejoint.",
-                ctx.author.name,
-                ctx.channel.name
-            )
-            return
-
-        await ctx.send(f"Hey Squad! Ja, genau ihr seid gemeint, Krah Krah!\n{' '.join(members)}")
-        logging.info("%s hat das Squad in %s gerufen.", ctx.author.name, ctx.channel.name)
-
-    @is_valid_game_channel()
-    @commands.group(
-        name='squad',
-        aliases=['sq'],
-        brief='Manage dein Squad.'
-    )
-    async def _squad(self, ctx: commands.Context) -> None:
-        '''Du willst dein Squad managen? Okay, so gehts!
-        Achtung: Jeder Game-Channel hat ein eigenes Squad. Du musst also im richtigen Channel sein.
-
-        !squad                  zeigt dir an, wer aktuell im Squad ist.
-        !squad add User1 ...    fügt User hinzu. Du kannst auch mehrere User gleichzeitig
-                                hinzufügen. "add me" fügt dich hinzu.
-        !squad rem User1 ...    entfernt den oder die User wieder.'''
-
-        if not isinstance(ctx.channel, discord.TextChannel):
-            return
-
-        if not self.bot.squads[ctx.channel.name]:
-            await ctx.send("Es gibt hier noch kein Squad, Krah Krah!")
-            logging.warning(
-                "%s hat das Squad in %s gerufen aber es gibt keins.",
-                ctx.author.name,
-                ctx.channel.name
-            )
-            return
-
-        game = ctx.channel.name.replace('-', ' ').title()
-        members = ", ".join(self.bot.squads[ctx.channel.name].keys())
-
-        await ctx.send(f"Das sind die Mitglieder im {game}-Squad, Krah Krah!\n{members}")
-
-        logging.info(
-            "%s hat das Squad in %s angezeigt: %s.",
-            ctx.author.name,
-            ctx.channel.name,
-            members
-        )
-
-    @is_valid_game_channel()
-    @_squad.command(
-        name='add',
-        aliases=['-a', '+'],
-        brief='Fügt User zum Squad hinzu.'
-    )
-    async def _squad_add(self, ctx: commands.Context, member: discord.Member) -> None:
-        if not isinstance(ctx.channel, discord.TextChannel):
-            return
-
-        if member.name in self.bot.squads[ctx.channel.name]:
-            await ctx.send(f"{member.name} scheint schon im Squad zu sein, Krah Krah!")
-            logging.warning(
-                "%s wollte %s mehrfach zum %s-Squad hinzuzufügen.",
-                ctx.author.name,
-                member.name,
-                ctx.channel.name
-            )
-            return
-
-        self.bot.squads[ctx.channel.name][member.name] = member.id
-        await ctx.send(f"{member.name} wurde zum Squad hinzugefügt, Krah Krah!")
-        logging.info(
-            "%s hat %s zum %s-Squad hinzugefügt.",
-            ctx.author.name,
-            member.name,
-            ctx.channel.name
-        )
-
-    @is_valid_game_channel()
-    @_squad.command(
-        name='rem',
-        aliases=['-r', '-'],
-        brief='Entfernt User aus dem Squad.'
-    )
-    async def _squad_rem(self, ctx: commands.Context, member: discord.Member) -> None:
-        if not isinstance(ctx.channel, discord.TextChannel):
-            return
-
-        if member.name in self.bot.squads[ctx.channel.name]:
-            await ctx.send(
-                "Das macht gar keinen Sinn. {member.name} ist gar nicht im Squad, Krah Krah!"
-            )
-            logging.warning(
-                "%s wollte %s aus dem %s-Squad entfernen, "
-                "aber er war nicht Mitglied.",
-                ctx.author.name,
-                member.name,
-                ctx.channel.name
-            )
-            return
-
-        self.bot.squads[ctx.channel.name].pop(member.name)
-        await ctx.send(f"{member.name} wurde aus dem Squad entfernt, Krah Krah!")
-        logging.info(
-            "%s hat %s aus dem %s-Squad entfernt.",
-            ctx.author.name,
-            member.name,
-            ctx.channel.name
-        )
-
     @tasks.loop(seconds=5.0)
     async def reminder_checker(self):
-        if self.time_now == dt.datetime.now().strftime('%H:%M'):
+        dt_ftm = "%d_%m_%H_%M"
+
+        if self.time_now == dt.datetime.now().strftime(dt_ftm):
             return
 
-        self.time_now = dt.datetime.now().strftime('%H:%M')
+        self.time_now = dt.datetime.now().strftime(dt_ftm)
 
-        for event in self.events.values():
-            if event.event_time != self.time_now:
+        events = await Event.upcoming_events()
+
+        for event in events:
+            if event.time.strftime(dt_ftm) != self.time_now:
                 continue
 
-            logging.info("Ein Event beginnt: %s!", event.event_type)
+            logging.info("Ein Event beginnt: %s!", event.type)
 
             if not isinstance(
-                output_channel := self.bot.channels[event.event_type], discord.TextChannel
+                output_channel := self.bot.channels[str(event.type)], discord.TextChannel
             ):
                 logging.error('Event channel for %s no text channel!')
                 return
 
-            members = " ".join(f"<@{id}>" for id in event.event_members)
-
-            match event.event_type:
-                case 'stream':
+            match event.type:
+                case EventType.STREAM:
                     await output_channel.send(
-                        f"Oh, ist es denn schon {event.event_time} Uhr? "
+                        f"Oh, ist es denn schon {event.time.strftime('%H:%M')} Uhr? "
                         "Dann ab auf https://www.twitch.tv/schnenko/ ... "
                         "der Stream fängt an, Krah Krah! "
-                        f"Heute mit von der Partie: {members}"
                     )
                 case 'game':
                     await output_channel.send(
-                        f"Oh, ist es denn schon {event.event_time} Uhr? "
-                        f"Dann ab in den Voice-Chat, {event.event_game} fängt an, Krah Krah! "
-                        f"Heute mit von der Partie: {members}"
+                        f"Oh, ist es denn schon {event.time.strftime('%H:%M')} Uhr? "
+                        f"Dann ab in den Voice-Chat, {event.title} fängt an, Krah Krah! "
                     )
 
-            event.reset()
-            logging.info('Event-Post abgesetzt, Timer resettet.')
+            await event.mark_as_started()
 
     @reminder_checker.before_loop
     async def before_reminder_loop(self):

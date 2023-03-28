@@ -1,100 +1,74 @@
+from enum import Enum
 from typing import Optional
 
 import discord
-from attr import dataclass
-from discord.ext import commands
 
 from tools.event_tools import Event
 
 
-@dataclass
-class Field():
-    name: str
-    value: str | None
-    inline: bool = False
+class EventButtonAction(Enum):
+    SAVE = "Ja, nur speichern."
+    ANNOUNCE = "Ja, sofort ankündigen."
+    ABORT = "Abbrechen."
 
 
-class EventPreviewEmbed(discord.Embed):
-    def __init__(
-        self,
-        title: Optional[str] = None,
-        description: Optional[str] = None,
-        fields: Optional[list[Field]] = None
-    ) -> None:
-        super().__init__(color=discord.Colour(0xff00ff), title=title, description=description,)
-
-        if fields is None:
-            return
-
-        for field in fields:
-            self.add_field(**field.__dict__)
-
-
-class EventPreview(discord.ui.View):
-    def __init__(self, ctx: commands.Context, event: Event):
-        super().__init__()
-        self.ctx = ctx
+class EventButton(discord.ui.Button):
+    def __init__(self, action: EventButtonAction, event: Event):
+        self.action = action
         self.event = event
 
-    async def send(self):
-        preview_embed = EventPreviewEmbed(
-            "Vorschau",
-            fields=[
-                Field("Art:", self.event.type.value),
-                Field("Zeitpunkt:", self.event.time.strftime('%d.%m %H:%M')),
-                Field("Titel:", self.event.title)
-            ]
+        if self.action == EventButtonAction.ABORT:
+            style = discord.ButtonStyle.red
+        else:
+            style = discord.ButtonStyle.blurple
+
+        super().__init__(style=style, label=self.action.value)
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.view is None:
+            return
+
+        match self.action:
+            case EventButtonAction.SAVE:
+                await interaction.response.send_message(
+                    'Alles klar, das Event wird gespeichert.',
+                    ephemeral=True
+                )
+
+                await self.event.add_to_db()
+
+            case EventButtonAction.ANNOUNCE:
+                await interaction.response.send_message(
+                    'Alles klar, das Event wird angekündigt.',
+                    ephemeral=True
+                )
+
+                await self.event.add_to_db()
+
+            case EventButtonAction.ABORT:
+                await interaction.response.send_message(
+                    'Alles klar, das Event wird nicht gespeichert.',
+                    ephemeral=True
+                )
+
+        self.view.performed_action = self.action
+
+        self.view.stop()
+
+
+class ConfirmEventPreview(discord.ui.View):
+    def __init__(self, *, timeout: Optional[float] = 180):
+        super().__init__(timeout=timeout)
+        self.performed_action: EventButtonAction | None = None
+
+
+class ViewBuilder():
+    @classmethod
+    def confirm_event_preview(cls, event: Event) -> ConfirmEventPreview:
+        return ConfirmEventPreview().add_item(
+            EventButton(EventButtonAction.SAVE, event)
+        ).add_item(
+            EventButton(EventButtonAction.ANNOUNCE, event)
+        ).add_item(
+            EventButton(EventButtonAction.ABORT, event)
         )
-
-        msg = await self.ctx.send(
-            "Stimmt das so?",
-            embed=preview_embed,
-            view=self,
-            ephemeral=True
-        )
-
-        await self.wait()
-        await msg.delete()
-
-    @discord.ui.button(label='Ja, nur speichern.', style=discord.ButtonStyle.blurple)
-    async def confirm_and_save(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            'Alles klar, das Event wird gespeichert.',
-            ephemeral=True
-        )
-
-        await self.event.add_to_db()
-
-        self.stop()
-
-    @discord.ui.button(label='Ja, sofort ankündigen.', style=discord.ButtonStyle.blurple)
-    async def confirm_and_announce(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            'Alles klar, das Event wird angekündigt.',
-            ephemeral=True
-        )
-
-        await self.event.add_to_db()
-
-        self.stop()
-
-    @discord.ui.button(label='Abbrechen.', style=discord.ButtonStyle.red)
-    async def abort(
-        self,
-        interaction: discord.Interaction,
-        button: discord.ui.Button
-    ):
-        await interaction.response.send_message(
-            'Alles klar, das Event wird nicht gespeichert.',
-            ephemeral=True
-        )
-
-        self.stop()
