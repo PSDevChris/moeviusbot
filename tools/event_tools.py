@@ -12,7 +12,6 @@ from sqlalchemy import asc, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
 from tools.db_tools import Base, create_engine
-from tools.dt_tools import get_local_timezone
 
 DEFAULT_TIME_FMT = '%d.%m um %H:%M Uhr'
 
@@ -31,8 +30,6 @@ class Event(Base):
 
     __tablename__ = "event"
 
-    engine = create_engine()
-
     id: Mapped[int] = mapped_column(primary_key=True)
     type: Mapped[EventType]
     title: Mapped[Optional[str]]
@@ -44,6 +41,7 @@ class Event(Base):
 
     def __init__(self, **kw: Any):
         super().__init__(**kw)
+        self.session = Session(create_engine(), autoflush=True, expire_on_commit=False)
 
     def __repr__(self) -> str:
         return f"""User(id={self.id!r}, type={self.type!r}, title={self.title!r},
@@ -54,18 +52,24 @@ class Event(Base):
         return f"#{self.id:04}-{self.type}: {self.time} {self.title}"
 
     async def add_to_db(self) -> None:
-        with Session(self.engine) as session:
-            session.add(self)
-            session.commit()
+        self.session.add(self)
+        self.session.commit()
 
         logging.info('Event saved: %s', self)
 
-    async def mark_as_started(self) -> None:
-        with Session(self.engine) as session:
-            self.started = True
-            session.flush()
+    async def mark_as_announced(self) -> None:
+        with Session(create_engine()) as session, session.begin():
+            if (event := session.get(Event, self.id)) is None:
+                raise ValueError
+            event.announced = True
+            logging.info('Event updated (announced): %s', self)
 
-        logging.info('Event updated: %s', self)
+    async def mark_as_started(self) -> None:
+        with Session(create_engine()) as session, session.begin():
+            if (event := session.get(Event, self.id)) is None:
+                raise ValueError
+            event.started = True
+            logging.info('Event updated (started): %s', self)
 
     def to_field(self, inline: bool = False) -> dict:
         return {
@@ -80,7 +84,7 @@ class Event(Base):
 
     @classmethod
     async def events_to_anounce(cls) -> list[Event]:
-        with Session(cls.engine) as session:
+        with Session(create_engine()) as session:
             return list(session.scalars(
                 select(cls).where(
                     cls.announced.is_(False)
@@ -89,7 +93,7 @@ class Event(Base):
 
     @classmethod
     async def next_event_to_anounce(cls) -> Event | None:
-        with Session(cls.engine) as session:
+        with Session(create_engine()) as session:
             return session.scalars(
                 select(cls).where(
                     cls.announced.is_(False)
@@ -100,20 +104,13 @@ class Event(Base):
 
     @classmethod
     async def upcoming_events(cls) -> list[Event]:
-        with Session(cls.engine) as session:
-            return list(session.scalars(
+        with Session(create_engine()) as session:
+            return list(session.execute(
                 select(cls).where(
-                    cls.time > dt.datetime.now(tz=get_local_timezone())
+                    cls.started.is_(False)
                 ).where(
                     cls.announced.is_(True)
                 ).order_by(
                     asc(cls.time)
                 )
-            ))
-
-
-# asyncio.run(Event(type=EventType.STREAM, title='A', time=dt.datetime(
-#     2023, 3, 29, 20, 15, tzinfo=get_local_timezone()), creator=1).add_to_db())
-
-# asyncio.run(Event(type=EventType.STREAM, title='B', time=dt.datetime(
-#     2023, 3, 27, 20, 15, tzinfo=get_local_timezone()), creator=2).add_to_db())
+            ).scalars())

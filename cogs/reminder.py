@@ -82,17 +82,28 @@ class Reminder(commands.Cog, name='Events'):
 
     @is_special_user([SpecialUser.Schnenk, SpecialUser.Hans])
     @_stream.command(name='add', brief='Fügt ein Stream Event hinzu.')
-    @discord.app_commands.rename(time='zeitpunkt', title='titel')
-    @discord.app_commands.describe(time='HH:MM oder TT.MM. HH:MM', title='Optionaler Titel')
+    @discord.app_commands.rename(time='zeitpunkt', title='titel', description='beschreibung')
+    @discord.app_commands.describe(
+        time='HH:MM oder TT.MM. HH:MM',
+        title='Optionaler Titel',
+        description='Optionale Beschreibung'
+    )
     async def _add_stream(
         self,
         ctx: commands.Context,
         time: DtString,
-        title: Optional[str] = ''
+        title: Optional[str] = '',
+        description: Optional[str] = ''
     ) -> None:
         await ctx.defer()
 
-        event = Event(type=EventType.STREAM, title=title, time=time, creator=ctx.author.id)
+        event = Event(
+            type=EventType.STREAM,
+            title=title,
+            description=description,
+            time=time,
+            creator=ctx.author.id
+        )
         embed = EmbedBuilder.single_stream_announcement(event)
         view = ViewBuilder.confirm_event_preview(event)
 
@@ -105,6 +116,8 @@ class Reminder(commands.Cog, name='Events'):
                 return
 
             await output_channel.send(embed=EmbedBuilder.single_stream_announcement(event))
+            await event.mark_as_announced()
+
             await ctx.send("Ich habe das Event angekündigt.", ephemeral=True)
 
         await msg.edit(view=None)
@@ -187,23 +200,16 @@ class Reminder(commands.Cog, name='Events'):
             logging.info("Ein Event beginnt: %s!", event.type)
 
             if not isinstance(
-                output_channel := self.bot.channels[str(event.type)], discord.TextChannel
+                output_channel := self.bot.channels['stream'], discord.TextChannel
             ):
                 logging.error('Event channel for %s no text channel!')
                 return
 
-            match event.type:
-                case EventType.STREAM:
-                    await output_channel.send(
-                        f"Oh, ist es denn schon {event.time.strftime('%H:%M')} Uhr? "
-                        "Dann ab auf https://www.twitch.tv/schnenko/ ... "
-                        "der Stream fängt an, Krah Krah! "
-                    )
-                case 'game':
-                    await output_channel.send(
-                        f"Oh, ist es denn schon {event.time.strftime('%H:%M')} Uhr? "
-                        f"Dann ab in den Voice-Chat, {event.title} fängt an, Krah Krah! "
-                    )
+            await output_channel.send(
+                f"Oh, ist es denn schon {event.time.strftime('%H:%M')} Uhr? "
+                "Dann ab auf https://www.twitch.tv/schnenko/ ... "
+                "der Stream fängt an, Krah Krah! "
+            )
 
             await event.mark_as_started()
 
