@@ -144,6 +144,33 @@ class Reminder(commands.Cog, name='Events'):
 
         await ctx.send("Ich habe das Event angekündigt.", ephemeral=True)
 
+    @is_special_user([SpecialUser.Schnenk, SpecialUser.Hans])
+    @_announce_event.command(name='week', brief='Kündigt Stream Events an.')
+    async def _announce_this_week_events(
+        self,
+        ctx: commands.Context,
+        description: Optional[str]
+    ) -> None:
+        await ctx.defer()
+
+        if (output_channel := self.bot.channels['stream']) is None:
+            return
+
+        if not (events := await Event.week_events_to_anounce()):
+            return
+
+        if description is None:
+            description = ''
+
+        await output_channel.send(
+            embed=EmbedBuilder.week_streams_announcement(
+                events,
+                description
+            )
+        )
+
+        await ctx.send("Ich habe die Events angekündigt.", ephemeral=True)
+
     @commands.hybrid_group(
         name='game',
         fallback='show',
@@ -187,7 +214,7 @@ class Reminder(commands.Cog, name='Events'):
             )
             return
 
-        new_member = Member(member_id=ctx.author.id, event_id=event_id)
+        new_member = Member(id=ctx.author.id, event_id=event_id)
         if await new_member.is_already_joined():
             await ctx.send(
                 "Anscheinend bist du schon beigetreten, Krah Krah!",
@@ -196,6 +223,10 @@ class Reminder(commands.Cog, name='Events'):
             return
 
         await new_member.add_to_db()
+        await ctx.send(
+            "Alles klar, ich packe dich auf die Gästeliste, Krah Krah!",
+            ephemeral=True
+        )
 
     @tasks.loop(seconds=5.0)
     async def reminder_checker(self):

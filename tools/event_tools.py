@@ -2,7 +2,6 @@
 of the discord bot'''
 
 from __future__ import annotations
-import asyncio
 
 import datetime as dt
 import logging
@@ -13,6 +12,7 @@ from sqlalchemy import asc, select
 from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
 
 from tools.db_tools import Base, create_engine
+from tools.dt_tools import get_week_boundaries
 
 DEFAULT_TIME_FMT = '%d.%m um %H:%M Uhr'
 
@@ -74,8 +74,8 @@ class Event(Base):
 
     def to_field(self, inline: bool = False) -> dict:
         return {
-            "name": str(self.type),
-            "value": f"**#{self.id:04}**: {self.fmt_dt}\n{self.title}\n{self.description}",
+            "name": f"**ID: {self.id:04}**",
+            "value": f"[{self.type}] {self.fmt_dt}\n{self.title}\n{self.description}",
             "inline": inline
         }
 
@@ -104,13 +104,21 @@ class Event(Base):
             ).first()
 
     @classmethod
+    async def week_events_to_anounce(cls) -> list[Event]:
+        start, end = get_week_boundaries()
+        with Session(create_engine()) as session:
+            return list(session.scalars(
+                select(cls).where(
+                    cls.announced.is_(False) & cls.time.between(start, end)
+                )
+            ))
+
+    @classmethod
     async def upcoming_events(cls) -> list[Event]:
         with Session(create_engine()) as session:
             return list(session.execute(
                 select(cls).where(
-                    cls.started.is_(False)
-                ).where(
-                    cls.announced.is_(True)
+                    cls.started.is_(False) & cls.announced.is_(True)
                 ).order_by(
                     asc(cls.time)
                 )

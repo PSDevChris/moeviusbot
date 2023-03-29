@@ -26,15 +26,30 @@ class EmbedBuilder():
         )
 
     @staticmethod
+    def week_streams_announcement(events: list[Event], description: str = '') -> discord.Embed:
+        if events is None or not events:
+            raise ValueError
+
+        embed = discord.Embed(
+            title="**Stream-Plan für diese Woche**",
+            description=description,
+            color=DEFAULT_COLOR
+        ).set_thumbnail(
+            url="https://static-cdn.jtvnw.net/jtv_user_pictures/2ed0d78d-f66a-409d-829a-b98c512d8534-profile_image-70x70.png"
+        )
+
+        for event in events:
+            embed.add_field(**event.to_field())
+
+        return embed
+
+    @staticmethod
     def events_to_be_announced(events: list[Event]) -> discord.Embed:
         if events is None or not events:
             raise ValueError
 
         embed = discord.Embed(
             title="**Unangekündigte Events**",
-            description="""Die folgenden Events sind aktuell angekündigt.
-                        Verwende den Button mit der richtigen ID oder /join <id> um 
-                        deinen Namen auf die Gästelistze zu setzen.""",
             color=DEFAULT_COLOR
         )
 
