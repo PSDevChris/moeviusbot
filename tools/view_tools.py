@@ -3,13 +3,14 @@ from typing import Optional
 
 import discord
 
-from tools.event_tools import Event
+from tools.event_tools import Event, Member
 
 
 class EventButtonAction(Enum):
     SAVE = "Ja, nur speichern."
     ANNOUNCE = "Ja, sofort ankündigen."
     ABORT = "Abbrechen."
+    JOIN = "!join"
 
 
 class EventButton(discord.ui.Button):
@@ -51,6 +52,13 @@ class EventButton(discord.ui.Button):
                     ephemeral=True
                 )
 
+            case EventButtonAction.JOIN:
+                await interaction.response.send_message(
+                    'Alles klar, du wirst zum Event hinzugefügt.',
+                    ephemeral=True
+                )
+                await Member(member_id=interaction.user.id, event_id=self.event.id).add_to_db()
+
         self.view.performed_action = self.action
 
         self.view.stop()
@@ -71,4 +79,10 @@ class ViewBuilder():
             EventButton(EventButtonAction.ANNOUNCE, event)
         ).add_item(
             EventButton(EventButtonAction.ABORT, event)
+        )
+
+    @classmethod
+    def join_single_event(cls, event: Event) -> discord.ui.View:
+        return discord.ui.View(timeout=None).add_item(
+            EventButton(EventButtonAction.JOIN, event)
         )

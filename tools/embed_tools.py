@@ -9,9 +9,9 @@ class EmbedBuilder():
     @staticmethod
     def single_stream_announcement(event: Event) -> discord.Embed:
         return discord.Embed(
-            title="**Macht euch bereit für einen Stream!**",
+            title="**Stream-Ankündigung**",
             url="https://www.twitch.tv/schnenko",
-            description=f"{event.description}\nGebt mir ein /join, Krah Krah!",
+            description=f"{event.description}\nGebt mir ein Join, Krah Krah!",
             colour=DEFAULT_COLOR
         ).add_field(
             name="Wann?",
@@ -21,6 +21,8 @@ class EmbedBuilder():
             value=event.title
         ).set_thumbnail(
             url="https://static-cdn.jtvnw.net/jtv_user_pictures/2ed0d78d-f66a-409d-829a-b98c512d8534-profile_image-70x70.png"
+        ).set_footer(
+            text=f"Event ID: {event.id}"
         )
 
     @staticmethod
@@ -58,3 +60,17 @@ class EmbedBuilder():
             embed.add_field(**event.to_field())
 
         return embed
+
+    @staticmethod
+    def stream_running(event: Event) -> discord.Embed:
+        return discord.Embed(
+            title="**Schnenko nervt!**",
+            url="https://www.twitch.tv/schnenko",
+            description=f"**{event.title}**",
+            colour=DEFAULT_COLOR
+        ).add_field(
+            name="Beschreibung:",
+            value=event.description
+        ).set_thumbnail(
+            url="https://static-cdn.jtvnw.net/jtv_user_pictures/2ed0d78d-f66a-409d-829a-b98c512d8534-profile_image-70x70.png"
+        )

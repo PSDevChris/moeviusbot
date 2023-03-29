@@ -8,9 +8,8 @@ from discord.ext import commands, tasks
 from bot import Bot
 from tools.check_tools import SpecialUser, is_special_user
 from tools.converter_tools import DtString
-from tools.db_tools import create_engine
 from tools.embed_tools import EmbedBuilder
-from tools.event_tools import Event, EventType
+from tools.event_tools import Event, EventType, Member
 from tools.view_tools import EventButtonAction, ViewBuilder
 
 
@@ -44,8 +43,8 @@ class Reminder(commands.Cog, name='Events'):
     def __init__(self, bot: Bot) -> None:
         self.bot = bot
 
-        self.db_engine = create_engine()
         self.time_now = ''
+        self.last_announced_event = 0
 
         self.reminder_checker.start()
         logging.info('Reminder initialized.')
@@ -53,13 +52,6 @@ class Reminder(commands.Cog, name='Events'):
     async def cog_unload(self) -> None:
         self.reminder_checker.cancel()
         logging.info('Reminder unloaded.')
-
-    async def join_event(
-        self,
-        event_type: str,
-        ctx: commands.Context
-    ) -> None:
-        pass
 
     @commands.hybrid_group(
         name='stream',
@@ -115,10 +107,13 @@ class Reminder(commands.Cog, name='Events'):
             if (output_channel := self.bot.channels['stream']) is None:
                 return
 
-            await output_channel.send(embed=EmbedBuilder.single_stream_announcement(event))
-            await event.mark_as_announced()
+            self.last_announced_event = event.id
 
-            await ctx.send("Ich habe das Event angekündigt.", ephemeral=True)
+            await output_channel.send(
+                embed=EmbedBuilder.single_stream_announcement(event),
+                view=ViewBuilder.join_single_event(event)
+            )
+            await event.mark_as_announced()
 
         await msg.edit(view=None)
 
@@ -171,16 +166,36 @@ class Reminder(commands.Cog, name='Events'):
         aliases=['j'],
         brief='Tritt einem Event bei.'
     )
-    async def _join(self, ctx: commands.Context) -> None:
+    async def _join(self, ctx: commands.Context, event_id: Optional[int]) -> None:
         '''Wenn ein Reminder eingerichtet wurde, kannst du ihm mit diesem Kommando beitreten.
 
         Stehst du auf der Teilnehmerliste, wird der Bot dich per Erwähnung benachrichtigen,
         wenn das Event beginnt oder siche etwas ändern sollte.'''
 
-        if ctx.channel == self.bot.channels['stream']:
-            await self.join_event('stream', ctx)
-        else:
-            await self.join_event('game', ctx)
+        await ctx.defer()
+
+        if event_id is None:
+            event_id = self.last_announced_event
+
+        if event_id <= 0:
+            event_id = await Event.next_upcoming_event()
+
+        if event_id is None:
+            await ctx.send(
+                "Anscheinend gibt es gerade nichts zum beitreten, Krah Krah!",
+                ephemeral=True
+            )
+            return
+
+        new_member = Member(member_id=ctx.author.id, event_id=event_id)
+        if await new_member.is_already_joined():
+            await ctx.send(
+                "Anscheinend bist du schon beigetreten, Krah Krah!",
+                ephemeral=True
+            )
+            return
+
+        await new_member.add_to_db()
 
     @tasks.loop(seconds=5.0)
     async def reminder_checker(self):
@@ -207,8 +222,8 @@ class Reminder(commands.Cog, name='Events'):
 
             await output_channel.send(
                 f"Oh, ist es denn schon {event.time.strftime('%H:%M')} Uhr? "
-                "Dann ab auf https://www.twitch.tv/schnenko/ ... "
-                "der Stream fängt an, Krah Krah! "
+                "Dann ab auf https://www.twitch.tv/schnenko/ ... ",
+                embed=EmbedBuilder.stream_running(event)
             )
 
             await event.mark_as_started()

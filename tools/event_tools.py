@@ -2,6 +2,7 @@
 of the discord bot'''
 
 from __future__ import annotations
+import asyncio
 
 import datetime as dt
 import logging
@@ -9,7 +10,7 @@ from enum import Enum
 from typing import Any, Optional
 
 from sqlalchemy import asc, select
-from sqlalchemy.orm import Mapped, Session, mapped_column
+from sqlalchemy.orm import Mapped, Session, mapped_column, sessionmaker
 
 from tools.db_tools import Base, create_engine
 
@@ -44,7 +45,7 @@ class Event(Base):
         self.session = Session(create_engine(), autoflush=True, expire_on_commit=False)
 
     def __repr__(self) -> str:
-        return f"""User(id={self.id!r}, type={self.type!r}, title={self.title!r},
+        return f"""Event(id={self.id!r}, type={self.type!r}, title={self.title!r},
             description={self.description!r}, time={self.time!r}, creator={self.creator!r},
             announced={self.announced!r}, started={self.started!r})"""
 
@@ -114,3 +115,46 @@ class Event(Base):
                     asc(cls.time)
                 )
             ).scalars())
+
+    @classmethod
+    async def next_upcoming_event(cls) -> int | None:
+        with Session(create_engine()) as session:
+            return session.scalars(
+                select(
+                    cls.id
+                ).where(
+                    cls.announced.is_(True)
+                ).order_by(
+                    asc(cls.time)
+                )
+            ).first()
+
+
+class Member(Base):
+    '''This class is used to allow Members to join Events'''
+
+    __tablename__ = "member"
+
+    Session = sessionmaker(create_engine(), autoflush=True)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(primary_key=True)
+
+    def __init__(self, **kw: Any):
+        super().__init__(**kw)
+
+    def __repr__(self) -> str:
+        return f"Member(id={self.id!r}, event_id={self.event_id!r})"
+
+    def __str__(self) -> str:
+        return str(self.id)
+
+    async def add_to_db(self) -> None:
+        logging.info('Addding member %s to event %s', self, self.event_id)
+
+        with self.Session() as session, session.begin():
+            session.add(self)
+
+    async def is_already_joined(self):
+        with self.Session() as session:
+            return session.get(Member, (self.id, self.event_id)) is not None
