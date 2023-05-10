@@ -289,6 +289,7 @@ class Administration(commands.Cog, name='Administration'):
             ]
         ))
 
+        logging.info('All cogs loaded.')
 
         create_all()
 
