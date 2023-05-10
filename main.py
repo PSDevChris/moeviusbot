@@ -291,6 +291,9 @@ class Administration(commands.Cog, name='Administration'):
 
         logging.info('All cogs loaded.')
 
+        await self.bot.tree.sync()
+        logging.info('Command tree synced.')
+
         create_all()
 
         logging.info('Bot ready!')
